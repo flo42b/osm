@@ -64,5 +64,6 @@
         <file alias="source/Group.qml">qml/source/Group.qml</file>
         <file alias="source/GroupProperties.qml">qml/source/GroupProperties.qml</file>
         <file alias="SourceLayout.qml">qml/SourceLayout.qml</file>
+        <file alias="ViewPreset.qml">qml/ViewPreset.qml</file>
     </qresource>
 </RCC>

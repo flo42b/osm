@@ -46,6 +46,13 @@ Item {
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
+            Button {
+                font.family: "Osm"
+                font.pixelSize: 12
+                text: "View\nPresets"
+                flat: true
+                onClicked: applicationWindow.properiesbar.open(null, "qrc:/ViewPreset.qml");
+            }
             DropDown {
                 id: chartsCount
                 Layout.alignment: Qt.AlignHCenter

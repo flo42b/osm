@@ -32,9 +32,13 @@ public:
         return dynamic_cast<QSettings *>(QObject::parent());
     }
     Q_INVOKABLE void setValue(const QString &key, const QVariant &value);
+    Q_INVOKABLE void copyGroup(const QString &sourceGroupName, const QString &destinationGroupSting);
+    Q_INVOKABLE void removeGroup(const QString &sourceGroupName);
     Q_INVOKABLE QVariant value(const QString &key, const QVariant &defaultValue = QVariant());
     Q_INVOKABLE Settings *getGroup(const QString &groupName);
     Q_INVOKABLE Settings *getSubGroup(const QString &groupName);
+    Q_INVOKABLE QStringList allKeys();
+    Q_INVOKABLE QStringList getChildGroups();
 
     template <typename C, typename T>
     QVariant reactValue(

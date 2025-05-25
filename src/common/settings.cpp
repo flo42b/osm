@@ -34,6 +34,28 @@ void Settings::setValue(const QString &key, const QVariant &value)
     group_guard guard(m_group);
     m_settings->setValue(key, value);
 }
+void Settings::copyGroup(const QString &sourceGroupName, const QString &destinationGroupName)
+{
+    group_guard guard(m_group);
+    QStringList keys = m_settings->allKeys();
+    QString sourceGroupNameStr = sourceGroupName;
+    QString destinationKey;
+    QVariant sourceValue;
+    for(const QString& i : keys){
+        if(i.startsWith(sourceGroupName)){
+            sourceValue = m_settings->value(i);
+            destinationKey = destinationGroupName + i.mid(sourceGroupNameStr.length());
+            m_settings->setValue(destinationKey, sourceValue);
+        }
+    }
+    m_settings->sync();
+}
+void Settings::removeGroup(const QString &sourceGroupName)
+{
+    group_guard guard(m_group);
+    m_settings->remove(sourceGroupName);
+    m_settings->sync();
+}
 QVariant Settings::value(const QString &key, const QVariant &defaultValue)
 {
     group_guard guard(m_group);
@@ -53,7 +75,18 @@ Settings *Settings::getSubGroup(const QString &groupName)
 {
     return getGroup(m_group + groupName);
 }
-
+QStringList Settings::allKeys()
+{
+    group_guard guard(m_group);
+    QStringList keylist = m_settings->allKeys();
+    return keylist;
+}
+QStringList Settings::getChildGroups()
+{
+    group_guard guard(m_group);
+    QStringList childGroups = m_settings->childGroups();
+    return childGroups;
+}
 void Settings::flush()
 {
     m_settings->sync();
