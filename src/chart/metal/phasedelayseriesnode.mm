@@ -51,7 +51,7 @@ void PhaseDelaySeriesNode::synchronizeSeries()
 
 void PhaseDelaySeriesNode::renderSeries()
 {
-    if (!m_source->size()) {
+    if (!m_source->frequencyDomainSize()) {
         clearRender();
         return;
     }
@@ -122,7 +122,7 @@ void PhaseDelaySeriesNode::updateMatrix()
     m_matrix.translate(-1 * logf(m_xMin), 0);
 }
 
-const Source::Shared &PhaseDelaySeriesNode::source() const
+const Shared::Source &PhaseDelaySeriesNode::source() const
 {
     return m_source;
 }

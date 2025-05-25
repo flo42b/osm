@@ -53,7 +53,7 @@ void MagnitudeSeriesNode::synchronizeSeries()
 
 void MagnitudeSeriesNode::renderSeries()
 {
-    if (!m_source->size()) {
+    if (!m_source->frequencyDomainSize()) {
         clearRender();
         return;
     }
@@ -122,7 +122,7 @@ void MagnitudeSeriesNode::updateMatrix()
     m_matrix.translate(-1 * logf(m_xMin), 0);
 }
 
-const Source::Shared &MagnitudeSeriesNode::source() const
+const Shared::Source &MagnitudeSeriesNode::source() const
 {
     return m_source;
 }

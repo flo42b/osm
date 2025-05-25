@@ -27,11 +27,11 @@ template<typename T> class Averaging
 {
 
 private:
-    typedef container::fifo<T> dataT;
-    container::array<dataT> m_data;
+    typedef Container::Fifo<T> dataT;
+    Container::array<dataT> m_data;
 
-    container::array<T> m_value;
-    container::array<unsigned int> m_collected;
+    Container::array<T> m_value;
+    Container::array<unsigned int> m_collected;
     float m_gain;
     unsigned int m_size;
     unsigned int m_depth;
@@ -91,11 +91,11 @@ protected:
 
 template<> void Averaging<unsigned int>::append(unsigned int i, const unsigned int &value);
 template<> void Averaging<float>::append(unsigned int i, const float &value);
-template<> void Averaging<complex>::append(unsigned int i, const complex &value);
+template<> void Averaging<Complex>::append(unsigned int i, const Complex &value);
 
 template <> unsigned int Averaging<unsigned int>::value(unsigned int i);
 template <> float Averaging<float>::value(unsigned int i);
-template <> complex Averaging<complex>::value(unsigned int i);
+template <> Complex Averaging<Complex>::value(unsigned int i);
 
 
 #endif // AVERAGING_H

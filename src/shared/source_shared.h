@@ -15,8 +15,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef SOURCE_SHARED_H
-#define SOURCE_SHARED_H
+#ifndef SHARED_SOURCE_H
+#define SHARED_SOURCE_H
 
 #include <memory>
 
@@ -24,30 +24,30 @@
 #include <QColor>
 #include <QUuid>
 
-namespace Source {
-class Abstract;
+namespace Abstract {
+class Source;
 }
 
-namespace Source {
+namespace Shared {
 
-class Shared : public std::shared_ptr<Source::Abstract>
+class Source : public std::shared_ptr<Abstract::Source>
 {
     Q_GADGET
-    Q_PROPERTY(Source::Abstract *data READ get CONSTANT)
+    Q_PROPERTY(Abstract::Source *data READ get CONSTANT)
     Q_PROPERTY(QUuid uuid READ uuid CONSTANT)
     Q_PROPERTY(QString objectName READ objectName CONSTANT)
 
 public:
-    Shared(std::shared_ptr<Source::Abstract> ptr = nullptr);
-    ~Shared();
+    Source(std::shared_ptr<Abstract::Source> ptr = nullptr);
+    ~Source();
 
-    QUuid uuid() const;
-    Q_INVOKABLE QColor color() const;
+    QUuid   uuid()       const;
+    Q_INVOKABLE QColor  color()      const;
     QString objectName() const;
 };
 
 } // namespace Source
 
-Q_DECLARE_METATYPE(Source::Shared)
+Q_DECLARE_METATYPE(Shared::Source)
 
-#endif // SOURCE_SHARED_H
+#endif // SHARED_SOURCE_H

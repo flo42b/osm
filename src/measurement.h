@@ -27,7 +27,7 @@
 #include "audio/stream.h"
 #include "inputdevice.h"
 #include "chart/type.h"
-#include "source/source_abstract.h"
+#include "abstract/source.h"
 #include "stored.h"
 #include "math/meter.h"
 #include "math/averaging.h"
@@ -39,7 +39,7 @@
 #include "common/settings.h"
 #include "container/circular.h"
 
-class Measurement : public Source::Abstract, public Meta::Measurement
+class Measurement : public Abstract::Source, public Meta::Measurement
 {
     Q_OBJECT
 
@@ -65,7 +65,6 @@ class Measurement : public Source::Abstract, public Meta::Measurement
     Q_PROPERTY(QVariant windows READ getAvailableWindowTypes CONSTANT)
 
     //local properties
-    Q_PROPERTY(int sampleRate READ sampleRate NOTIFY audioFormatChanged)
     Q_PROPERTY(QString deviceId READ deviceId WRITE setDeviceId NOTIFY deviceIdChanged REVISION NO_API_REVISION)
 
     //Current sound level
@@ -92,11 +91,11 @@ public:
 
     static const unsigned int TIMER_INTERVAL = 80; //ms = 12.5 per sec
 
-    Source::Shared clone() const override;
+    Shared::Source clone() const override;
 
-    void setActive(bool active) override;
+    void setActive(bool newActive) final;
 
-    Q_INVOKABLE QJsonObject toJSON(const SourceList *list = nullptr) const noexcept override;
+    Q_INVOKABLE QJsonObject toJSON() const noexcept override;
     void fromJSON(QJsonObject data, const SourceList *list = nullptr) noexcept override;
 
     float level(const Weighting::Curve curve = Weighting::Z, const Meter::Time time = Meter::Fast) const override;
@@ -107,9 +106,7 @@ public:
     float referencePeak() const;
 
     Q_INVOKABLE void resetAverage() noexcept override;
-    Q_INVOKABLE Source::Shared store() override;
-
-    unsigned int sampleRate() const;
+    Q_INVOKABLE Shared::Source store() override;
 
     long estimated() const noexcept;
     long estimatedDelta() const noexcept;
@@ -159,10 +156,11 @@ private:
     unsigned int m_delayFinderCounter;
     long m_estimatedDelay;
     bool m_error;
+    std::atomic<bool>       m_onReset;
 
-    container::circular<float> m_data, m_reference, m_loopBuffer;
+    Container::Circular<float> m_data, m_reference, m_loopBuffer;
     struct Meters {
-        std::unordered_map<Levels::Key, Meter, Levels::Key::Hash> m_meters;
+        std::unordered_map<::Abstract::LevelsData::Key, Meter, ::Abstract::LevelsData::Key::Hash> m_meters;
         Meter m_reference;
         std::shared_ptr<math::Filter> m_filter;
 
@@ -178,12 +176,12 @@ private:
 
     Averaging<float> m_deconvAvg;
     Averaging<float> m_magnitudeAvg, m_moduleAvg;
-    Averaging<complex> m_pahseAvg;
+    Averaging<Complex> m_pahseAvg;
     Coherence m_coherence;
 
-    container::array<Filter::BesselLPF<float>> m_moduleLPFs, m_magnitudeLPFs, m_deconvLPFs;
-    container::array<Filter::BesselLPF<complex>> m_phaseLPFs;
-    container::array<Meter> m_meters;
+    Container::array<Filter::BesselLPF<float>> m_moduleLPFs, m_magnitudeLPFs, m_deconvLPFs;
+    Container::array<Filter::BesselLPF<Complex>> m_phaseLPFs;
+    Container::array<Meter> m_meters;
 
     void calculateDataLength();
     void averaging();
@@ -221,7 +219,6 @@ signals:
     void windowFunctionTypeChanged(WindowFunction::Type) override;
     void filtersFrequencyChanged(Filter::Frequency) override;
     void delayChanged(int) override;
-    void sampleRateChanged(unsigned int) override;
     void inputFilterChanged(Meta::Measurement::InputFilter) override;
 };
 

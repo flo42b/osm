@@ -19,10 +19,10 @@
 #define STORED_H
 
 #include <QJsonObject>
-#include "source/source_abstract.h"
+#include "abstract/source.h"
 #include "meta/metastored.h"
 
-class Stored: public Source::Abstract, public Meta::Stored
+class Stored: public Abstract::Source, public Meta::Stored
 {
     Q_OBJECT
     Q_PROPERTY(QString notes READ notes WRITE setNotes NOTIFY notesChanged)
@@ -34,8 +34,8 @@ class Stored: public Source::Abstract, public Meta::Stored
 
 public:
     explicit Stored(QObject *parent = nullptr);
-    Source::Shared clone() const override;
-    void build (Source::Abstract *source);
+    Shared::Source clone() const override;
+    void build (const Abstract::Source &source);
 
     Q_INVOKABLE void autoName(const QString &prefix) noexcept;
 
@@ -45,17 +45,17 @@ public:
     Q_INVOKABLE bool saveTXT(const QUrl &fileName) const noexcept;
     Q_INVOKABLE bool saveCSV(const QUrl &fileName) const noexcept;
     Q_INVOKABLE bool saveWAV(const QUrl &fileName) const noexcept;
-    Q_INVOKABLE QJsonObject toJSON(const SourceList *list = nullptr) const noexcept override;
-    void fromJSON(QJsonObject data, const SourceList *list = nullptr) noexcept override;
+    Q_INVOKABLE QJsonObject toJSON() const noexcept override;
+    void fromJSON(QJsonObject data, const SourceList * = nullptr) noexcept override;
 
-    float module(const unsigned int &i) const noexcept override;
-    float magnitudeRaw(const unsigned int &i) const noexcept override;
-    float magnitude(const unsigned int &i) const noexcept override;
-    complex phase(const unsigned int &i) const noexcept override;
-    const float &coherence(const unsigned int &i) const noexcept override;
+    float module(unsigned int i) const noexcept override;
+    float magnitudeRaw(unsigned int i) const noexcept override;
+    float magnitude(unsigned int i) const noexcept override;
+    Complex phase(unsigned int i) const noexcept override;
+    float coherence(unsigned int i) const noexcept override;
 
-    float impulseTime(const unsigned int &i) const noexcept override;
-    float impulseValue(const unsigned int &i) const noexcept override;
+    float impulseTime(unsigned int i) const noexcept override;
+    float impulseValue(unsigned int i) const noexcept override;
 
 signals:
     void notesChanged() override;

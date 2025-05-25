@@ -24,20 +24,20 @@
 #include <QtEndian>
 #include "common/wavfile.h"
 
-Stored::Stored(QObject *parent) : Source::Abstract(parent), Meta::Stored()
+Stored::Stored(QObject *parent) : Abstract::Source(parent), Meta::Stored()
 {
     setObjectName("Stored");
-    connect(this, &Stored::polarityChanged, this, &Source::Abstract::readyRead);
-    connect(this, &Stored::inverseChanged, this, &Source::Abstract::readyRead);
-    connect(this, &Stored::ignoreCoherenceChanged, this, &Source::Abstract::readyRead);
-    connect(this, &Stored::gainChanged, this, &Source::Abstract::readyRead);
-    connect(this, &Stored::delayChanged, this, &Source::Abstract::readyRead);
+    connect(this, &Stored::polarityChanged, this, &Abstract::Source::readyRead);
+    connect(this, &Stored::inverseChanged, this, &Abstract::Source::readyRead);
+    connect(this, &Stored::ignoreCoherenceChanged, this, &Abstract::Source::readyRead);
+    connect(this, &Stored::gainChanged, this, &Abstract::Source::readyRead);
+    connect(this, &Stored::delayChanged, this, &Abstract::Source::readyRead);
 }
 
-Source::Shared Stored::clone() const
+Shared::Source Stored::clone() const
 {
     auto cloned = std::make_shared<Stored>(parent());
-    cloned->build(const_cast<Stored *>(this));
+    cloned->build(*this);
     cloned->setActive(active());
     cloned->setName(name());
     cloned->setInverse(inverse());
@@ -47,18 +47,12 @@ Source::Shared Stored::clone() const
     cloned->setGain(gain());
     cloned->setNotes(notes());
 
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 
-void Stored::build (Source::Abstract *source)
+void Stored::build (const Abstract::Source &source)
 {
-    source->lock();
-    m_dataLength = source->size();
-    m_deconvolutionSize = source->impulseSize();
-    m_ftdata.resize(m_dataLength);
-    m_impulseData.resize(m_deconvolutionSize);
-    source->copy(m_ftdata.data(), m_impulseData.data());
-    source->unlock();
+    source.copyTo(*this);
     emit readyRead();
 }
 
@@ -70,9 +64,9 @@ void Stored::autoName(const QString &prefix) noexcept
     setName(name);
 }
 
-QJsonObject Stored::toJSON(const SourceList *list) const noexcept
+QJsonObject Stored::toJSON() const noexcept
 {
-    auto object = Source::Abstract::toJSON(list);
+    auto object = Abstract::Source::toJSON();
     object["notes"]     = notes();
 
     object["polarity"]  = polarity();
@@ -82,7 +76,7 @@ QJsonObject Stored::toJSON(const SourceList *list) const noexcept
     object["gain"]      = gain();
 
     QJsonArray ftdata;
-    for (unsigned int i = 0; i < m_dataLength; ++i) {
+    for (unsigned int i = 0; i < frequencyDomainSize(); ++i) {
 
         //frequecy, module, magnitude, phase, coherence
         QJsonArray ftcell;
@@ -99,7 +93,7 @@ QJsonObject Stored::toJSON(const SourceList *list) const noexcept
     object["ftdata"] = ftdata;
 
     QJsonArray impulse;
-    for (unsigned int i = 0; i < m_deconvolutionSize; ++i) {
+    for (unsigned int i = 0; i < timeDomainSize(); ++i) {
 
         //time, value
         QJsonArray impulsecell;
@@ -111,17 +105,15 @@ QJsonObject Stored::toJSON(const SourceList *list) const noexcept
 
     return object;
 }
-void Stored::fromJSON(QJsonObject data, const SourceList *list) noexcept
+void Stored::fromJSON(QJsonObject data, const SourceList *) noexcept
 {
-    Source::Abstract::fromJSON(data, list);
+    Abstract::Source::fromJSON(data);
 
     auto ftdata         = data["ftdata"].toArray();
     auto impulse        = data["impulse"].toArray();
 
-    m_dataLength         = static_cast<unsigned int>(ftdata.count());
-    m_deconvolutionSize = static_cast<unsigned int>(impulse.count());
-    m_ftdata.resize(m_dataLength);
-    m_impulseData.resize(m_deconvolutionSize);
+    setFrequencyDomainSize(static_cast<unsigned int>(ftdata.count()));
+    setTimeDomainSize(     static_cast<unsigned int>(impulse.count()));
 
     for (int i = 0; i < ftdata.count(); i++) {
         auto row = ftdata[i].toArray();
@@ -183,10 +175,10 @@ bool Stored::saveCal(const QUrl &fileName) const noexcept
 
     float avg_magnitude = 0;
     float avg_coherence = 0;
-    complex avg_phase = 0;
+    Complex avg_phase = 0;
 
     QTextStream out(&saveFile);
-    for (unsigned int i = 0; i < m_dataLength; ++i) {
+    for (unsigned int i = 0; i < frequencyDomainSize(); ++i) {
 
         ppo_frequency = frequency(i);
 
@@ -239,7 +231,7 @@ bool Stored::saveFRD(const QUrl &fileName) const noexcept
         return false;
     }
     QTextStream out(&saveFile);
-    for (unsigned int i = 0; i < m_dataLength; ++i) {
+    for (unsigned int i = 0; i < frequencyDomainSize(); ++i) {
         auto m = magnitude(i);
         auto p = m_ftdata[i].phase.arg() * 180.f / static_cast<float>(M_PI);
         if (std::isnormal(m) && std::isnormal(p)) {
@@ -259,7 +251,7 @@ bool Stored::saveTXT(const QUrl &fileName) const noexcept
     QTextStream out(&saveFile);
     out << "Created with Open Sound Meter\n\n";
 
-    for (unsigned int i = 0; i < m_dataLength; ++i) {
+    for (unsigned int i = 0; i < frequencyDomainSize(); ++i) {
         auto m = magnitude(i);
         auto p = m_ftdata[i].phase.arg() * 180.f / static_cast<float>(M_PI);
         if (std::isnormal(m) && std::isnormal(p)) {
@@ -281,7 +273,7 @@ bool Stored::saveCSV(const QUrl &fileName) const noexcept
     }
     QTextStream out(&saveFile);
 
-    for (unsigned int i = 0; i < m_dataLength; ++i) {
+    for (unsigned int i = 0; i < frequencyDomainSize(); ++i) {
         auto m = magnitude(i);
         auto p = m_ftdata[i].phase.arg() * 180.f / static_cast<float>(M_PI);
         if (std::isnormal(m) && std::isnormal(p)) {
@@ -298,9 +290,9 @@ bool Stored::saveWAV(const QUrl &fileName) const noexcept
 {
     WavFile file;
     QByteArray data;
-    data.resize(m_deconvolutionSize * 4);
+    data.resize(timeDomainSize() * 4);
     auto dst = data.data();
-    for (unsigned int i = 0; i < m_deconvolutionSize; ++i, dst += 4) {
+    for (unsigned int i = 0; i < timeDomainSize(); ++i, dst += 4) {
         qToLittleEndian(m_impulseData[i].value.real, dst);
     }
 
@@ -308,41 +300,40 @@ bool Stored::saveWAV(const QUrl &fileName) const noexcept
     return file.save(fileName.toLocalFile(), sampleRate, data);
 }
 
-float Stored::module(const unsigned int &i) const noexcept {
-    return Source::Abstract::module(i) * std::pow(10, gain() / 20.f);
+float Stored::module(unsigned int i) const noexcept {
+    return ::Abstract::Source::module(i) * std::pow(10, gain() / 20.f);
 }
 
-float Stored::magnitudeRaw(const unsigned int &i) const noexcept
+float Stored::magnitudeRaw(unsigned int i) const noexcept
 {
-    return std::pow(Source::Abstract::magnitudeRaw(i), (inverse() ? -1 : 1)) * std::pow(10, gain() / 20.f);
+    return std::pow(::Abstract::Source::magnitudeRaw(i), (inverse() ? -1 : 1)) * std::pow(10, gain() / 20.f);
 }
 
-float Stored::magnitude(const unsigned int &i) const noexcept
+float Stored::magnitude(unsigned int i) const noexcept
 {
-    return (inverse() ? -1 : 1) * (Source::Abstract::magnitude(i) + gain());
+    return (inverse() ? -1 : 1) * (::Abstract::Source::magnitude(i) + gain());
 }
 
-complex Stored::phase(const unsigned int &i) const noexcept
+Complex Stored::phase(unsigned int i) const noexcept
 {
     auto alpha = (polarity() ? M_PI : 0) - 2 * M_PI * delay() * frequency(i) / 1000.f;
-    return Source::Abstract::phase(i).rotate(alpha);
+    return ::Abstract::Source::phase(i).rotate(alpha);
 }
 
-const float &Stored::coherence(const unsigned int &i) const noexcept
+float Stored::coherence(unsigned int i) const noexcept
 {
     if (ignoreCoherence()) {
-        static const float one = 1.f;
-        return one;
+        return 1.f;
     }
-    return Source::Abstract::coherence(i);
+    return ::Abstract::Source::coherence(i);
 }
 
-float Stored::impulseTime(const unsigned int &i) const noexcept
+float Stored::impulseTime(unsigned int i) const noexcept
 {
-    return Source::Abstract::impulseTime(i) + delay();
+    return ::Abstract::Source::impulseTime(i) + delay();
 }
 
-float Stored::impulseValue(const unsigned int &i) const noexcept
+float Stored::impulseValue(unsigned int i) const noexcept
 {
-    return (polarity() ? -1 : 1) * Source::Abstract::impulseValue(i) * std::pow(10, gain() / 20.f);
+    return (polarity() ? -1 : 1) * ::Abstract::Source::impulseValue(i) * std::pow(10, gain() / 20.f);
 }

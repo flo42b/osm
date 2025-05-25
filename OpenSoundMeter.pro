@@ -8,6 +8,9 @@ QML_IMPORT_NAME = OpenSoundMeterModule
 QML_IMPORT_MAJOR_VERSION = 1
 
 SOURCES += src/main.cpp \
+    src/abstract/data.cpp \
+    src/abstract/levelsdata.cpp \
+    src/abstract/source.cpp \
     src/audio/client.cpp \
     src/audio/deviceinfo.cpp \
     src/audio/devicemodel.cpp \
@@ -55,6 +58,7 @@ SOURCES += src/main.cpp \
     src/math/equalloudnesscontour.cpp \
     src/math/integration_tree.cpp \
     src/math/leq.cpp \
+    src/math/lowpassfilter.cpp \
     src/math/notch.cpp \
     src/math/weighting.cpp \
     src/meta/metabase.cpp \
@@ -73,9 +77,8 @@ SOURCES += src/main.cpp \
     src/remote/server.cpp \
     src/remote/tcpreciever.cpp \
     src/source/group.cpp \
-    src/source/source_abstract.cpp \
-    src/source/source_shared.cpp \
     src/source/sourcewindowing.cpp \
+    src/shared/source_shared.cpp \
     src/sourcelist.cpp \
     src/sourcemodel.cpp \
     src/standardline.cpp \
@@ -146,6 +149,9 @@ INCLUDEPATH += \
     src/source
 
 HEADERS += \
+    src/abstract/data.h \
+    src/abstract/levelsdata.h \
+    src/abstract/source.h \
     src/audio/client.h \
     src/audio/deviceinfo.h \
     src/audio/devicemodel.h \
@@ -198,6 +204,7 @@ HEADERS += \
     src/math/filter.h \
     src/math/integration_tree.h \
     src/math/leq.h \
+    src/math/lowpassfilter.h \
     src/math/notch.h \
     src/math/weighting.h \
     src/meta/metabase.h \
@@ -217,9 +224,8 @@ HEADERS += \
     src/remote/server.h \
     src/remote/tcpreciever.h \
     src/source/group.h \
-    src/source/source_abstract.h \
-    src/source/source_shared.h \
     src/source/sourcewindowing.h \
+    src/shared/source_shared.h \
     src/sourcelist.h \
     src/sourcemodel.h \
     src/standardline.h \

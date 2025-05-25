@@ -27,8 +27,9 @@
 #include "generator/generatorthread.h"
 #include "math/notch.h"
 #include "math/bandpass.h"
+#include "math/lowpassfilter.h"
 
-Measurement::Measurement(QObject *parent) : Source::Abstract(parent), Meta::Measurement(),
+Measurement::Measurement(QObject *parent) : Abstract::Source(parent), Meta::Measurement(),
     m_timer(nullptr), m_timerThread(nullptr),
     m_input(this),
     m_deviceId(audio::Client::defaultInputDeviceId()),
@@ -37,12 +38,12 @@ Measurement::Measurement(QObject *parent) : Source::Abstract(parent), Meta::Meas
     m_currentMode(Mode::FFT10),
     m_workingDelay(0), m_delayFinderCounter(0),
     m_estimatedDelay(0),
-    m_error(false),
+    m_error(false), m_onReset(false),
     m_data(65536), m_reference(65536), m_loopBuffer(65536),
     m_enableCalibration(false), m_calibrationLoaded(false), m_calibrationList(), m_calibrationGain()
 {
-    m_name = "Measurement";
-    setObjectName(m_name);
+    setName("Measurement");
+    setObjectName(name());
 
     if (m_settings) {
         setMode(        m_settings->reactValue<Measurement, Mode>(              "mode",         this,
@@ -72,22 +73,22 @@ Measurement::Measurement(QObject *parent) : Source::Abstract(parent), Meta::Meas
         selectDevice(   m_settings->reactValue<Measurement, QString>(           "device",       this,
                                                                                 &Measurement::deviceNameChanged,        deviceName()).toString());
     }
-    m_deconvolutionSize = static_cast<unsigned int>(pow(2, 12));
+    setTimeDomainSize(static_cast<unsigned int>(pow(2, 12)));
 
     updateFftPower();
     m_dataFT.setWindowFunctionType(m_windowFunctionType);
-    m_moduleLPFs.resize(m_dataLength);
-    m_magnitudeLPFs.resize(m_dataLength);
-    m_phaseLPFs.resize(m_dataLength);
-    m_meters.resize(m_dataLength);
+    m_moduleLPFs.resize(frequencyDomainSize());
+    m_magnitudeLPFs.resize(frequencyDomainSize());
+    m_phaseLPFs.resize(frequencyDomainSize());
+    m_meters.resize(frequencyDomainSize());
 
-    m_deconvolution.setSize(m_deconvolutionSize);
+    m_deconvolution.setSize(timeDomainSize());
     m_deconvolution.setWindowFunctionType(m_windowFunctionType);
     m_delayFinder.setSize(pow(2, 16));
     m_delayFinder.setWindowFunctionType(m_windowFunctionType);
-    m_impulseData.resize(m_deconvolutionSize);
-    m_deconvLPFs.resize(m_deconvolutionSize);
-    m_deconvAvg.setSize(m_deconvolutionSize);
+    m_impulseData.resize(timeDomainSize());
+    m_deconvLPFs.resize(timeDomainSize());
+    m_deconvAvg.setSize(timeDomainSize());
     m_deconvAvg.reset();
     m_coherence.setDepth(21);//Filter::BesselLPF<float>::ORDER);
 
@@ -115,18 +116,18 @@ Measurement::Measurement(QObject *parent) : Source::Abstract(parent), Meta::Meas
     connect(this, &Measurement::inputFilterChanged, this, &Measurement::applyInputFilters);
 
     m_timerThread.start();
-    setActive(true);
+    this->setActive(true);
 }
 Measurement::~Measurement()
 {
-    setActive(false);
+    this->setActive(false);
 
     m_timerThread.quit();
     m_timerThread.wait();
 }
-QJsonObject Measurement::toJSON(const SourceList *list) const noexcept
+QJsonObject Measurement::toJSON() const noexcept
 {
-    auto data = Source::Abstract::toJSON(list);
+    auto data = Abstract::Source::toJSON();
     data["delay"]           = static_cast<int>(delay());
     data["gain"]            = gain();
     data["offset"]          = offset();
@@ -160,7 +161,7 @@ QJsonObject Measurement::toJSON(const SourceList *list) const noexcept
 }
 void Measurement::fromJSON(QJsonObject data, const SourceList *list) noexcept
 {
-    Source::Abstract::fromJSON(data, list);
+    Abstract::Source::fromJSON(data, list);
 
     auto castUInt = [](const QJsonValue & value, unsigned int defaultValue = 0) {
         return static_cast<unsigned int>(value.toInt(static_cast<int>(defaultValue)));
@@ -241,35 +242,34 @@ void Measurement::updateFftPower()
     switch (m_currentMode) {
     case Mode::LFT:
         m_dataFT.setType(FourierTransform::Log);
-        m_deconvolutionSize = pow(2, m_FFTsizes.at(FFT12));
+        setTimeDomainSize(pow(2, m_FFTsizes.at(FFT12)));
         break;
 
     default:
         m_dataFT.setSize(pow(2, m_FFTsizes.at(m_currentMode)));
         m_dataFT.setType(FourierTransform::Fast);
 
-        m_deconvolutionSize = pow(2, m_FFTsizes.at(m_currentMode));
+        setTimeDomainSize(pow(2, m_FFTsizes.at(m_currentMode)));
     }
     m_dataFT.setSampleRate(sampleRate());
     m_levelMeters.setSampleRate(sampleRate());
     m_dataFT.prepare();
     calculateDataLength();
 
-    m_moduleAvg.setSize(size());
-    m_magnitudeAvg.setSize(size());
-    m_pahseAvg.setSize(size());
-    m_coherence.setSize(size());
+    m_moduleAvg.setSize(frequencyDomainSize());
+    m_magnitudeAvg.setSize(frequencyDomainSize());
+    m_pahseAvg.setSize(frequencyDomainSize());
+    m_coherence.setSize(frequencyDomainSize());
 
-    m_moduleLPFs.resize(size());
-    m_magnitudeLPFs.resize(size());
-    m_phaseLPFs.resize(size());
-    m_meters.resize(size());
+    m_moduleLPFs.resize(frequencyDomainSize());
+    m_magnitudeLPFs.resize(frequencyDomainSize());
+    m_phaseLPFs.resize(frequencyDomainSize());
+    m_meters.resize(frequencyDomainSize());
 
     // Deconvolution:
-    m_deconvolution.setSize(m_deconvolutionSize);
-    m_impulseData.resize(m_deconvolutionSize);
-    m_deconvLPFs.resize(m_deconvolutionSize);
-    m_deconvAvg.setSize(m_deconvolutionSize);
+    m_deconvolution.setSize(timeDomainSize());
+    m_deconvLPFs.resize(timeDomainSize());
+    m_deconvAvg.setSize(timeDomainSize());
     m_deconvAvg.reset();
 }
 void Measurement::updateFilterFrequency()
@@ -281,7 +281,7 @@ void Measurement::updateFilterFrequency()
     m_moduleLPFs.each(setFrequency);
     m_magnitudeLPFs.each(setFrequency);
     m_deconvLPFs.each(setFrequency);
-    m_phaseLPFs.each([&m_filtersFrequency = m_filtersFrequency](Filter::BesselLPF<complex> *f) {
+    m_phaseLPFs.each([&m_filtersFrequency = m_filtersFrequency](Filter::BesselLPF<Complex> *f) {
         f->setFrequency(m_filtersFrequency);
     });
 }
@@ -313,6 +313,12 @@ void Measurement::applyInputFilters()
         std::atomic_store(&m_inputFilters.second, std::shared_ptr<math::Filter>(new math::BandPass(100, q, sampleRate())));
     }
     break;
+    case InputFilter::LP200: {
+        auto q = 0.5f;
+        std::atomic_store(&m_inputFilters.first,  std::shared_ptr<math::Filter>(new math::LowPassFilter(200, q, sampleRate())));
+        std::atomic_store(&m_inputFilters.second, std::shared_ptr<math::Filter>(new math::LowPassFilter(200, q, sampleRate())));
+    }
+    break;
     case InputFilter::Z:
         std::atomic_store(&m_inputFilters.first, std::shared_ptr<math::Filter>());
         std::atomic_store(&m_inputFilters.second, std::shared_ptr<math::Filter>());
@@ -330,7 +336,7 @@ void Measurement::onSampleRateChanged()
 {
     std::lock_guard<std::mutex> guard(m_dataMutex);
     if (m_audioStream) {
-        m_sampleRate = m_audioStream->format().sampleRate;
+        setSampleRate(m_audioStream->format().sampleRate);
         m_dataFT.setSampleRate(sampleRate());
         m_dataFT.prepare();
         m_levelMeters.setSampleRate(sampleRate());
@@ -369,21 +375,20 @@ void Measurement::applyAutoGain(const float reference)
 void Measurement::calculateDataLength()
 {
     auto frequencyList = m_dataFT.getFrequencies();
-    m_dataLength = frequencyList.size();
-    m_ftdata.resize(m_dataLength);
+    setFrequencyDomainSize(frequencyList.size());
     unsigned int i = 0;
     for (auto frequency : frequencyList) {
         m_ftdata[i++].frequency = frequency;
     }
     applyCalibration();
 }
-void Measurement::setActive(bool active)
+void Measurement::setActive(bool newActive)
 {
-    if (active == m_active)
+    if (newActive == active())
         return;
     std::lock_guard<std::mutex> guard(m_dataMutex);
 
-    Source::Abstract::setActive(active);
+    Abstract::Source::setActive(newActive);
     m_error = false;
     emit errorChanged(m_error);
 
@@ -396,7 +401,7 @@ void Measurement::setActive(bool active)
 }
 void Measurement::setError()
 {
-    Source::Abstract::setActive(false);
+    Abstract::Source::setActive(false);
     m_error = true;
     m_levelMeters.reset();
     m_input.close();
@@ -444,10 +449,7 @@ void Measurement::updateAverage()
     m_magnitudeAvg.setDepth(m_average);
     m_pahseAvg.setDepth(m_average);
 }
-unsigned int Measurement::sampleRate() const
-{
-    return m_sampleRate;
-}
+
 void Measurement::updateWindowFunction()
 {
     m_dataFT.setWindowFunctionType(m_windowFunctionType);
@@ -460,7 +462,7 @@ void Measurement::updateWindowFunction()
 }
 void Measurement::writeData(const char *data, qint64 len)
 {
-    if (!m_audioStream || m_onReset.load() || !m_active) {
+    if (!m_audioStream || m_onReset.load() || !active()) {
         return;
     }
     std::lock_guard<std::mutex> guard(m_dataMutex);
@@ -510,7 +512,7 @@ void Measurement::writeData(const char *data, qint64 len)
 }
 void Measurement::transform()
 {
-    if (!m_active || m_error)
+    if (!active() || m_error)
         return;
 
     lock();
@@ -550,9 +552,9 @@ void Measurement::transform()
 }
 void Measurement::averaging()
 {
-    complex p;
+    Complex p;
     int j;
-    for (unsigned int i = 0; i < m_dataLength ; i++) {
+    for (unsigned int i = 0; i < frequencyDomainSize() ; i++) {
 
         j = static_cast<int>(i);
         float calibratedA = M_SQRT2 * m_dataFT.af(i).abs();
@@ -610,11 +612,11 @@ void Measurement::averaging()
 
     int t = 0;
     float kt = 1000.f / sampleRate();
-    for (unsigned int i = 0, j = m_deconvolutionSize / 2 - 1; i < m_deconvolutionSize; i++, j++, t++) {
+    for (unsigned int i = 0, j = timeDomainSize() / 2 - 1; i < timeDomainSize(); i++, j++, t++) {
 
-        if (t > static_cast<int>(m_deconvolutionSize / 2)) {
-            t -= static_cast<int>(m_deconvolutionSize);
-            j -= m_deconvolutionSize;
+        if (t > static_cast<int>(timeDomainSize() / 2)) {
+            t -= static_cast<int>(timeDomainSize());
+            j -= timeDomainSize();
         }
 
         switch (averageType()) {
@@ -636,10 +638,10 @@ void Measurement::averaging()
         emit estimatedChanged();
     }
 }
-Source::Shared Measurement::store()
+Shared::Source Measurement::store()
 {
     auto store = std::make_shared<Stored>();
-    store->build(this);
+    store->build( *this );
     store->autoName(name());
 
     QString avg;
@@ -695,7 +697,7 @@ Source::Shared Measurement::store()
 
     return { store };
 }
-Source::Shared Measurement::clone() const
+Shared::Source Measurement::clone() const
 {
     auto cloned = std::make_shared<Measurement>();
 
@@ -721,7 +723,7 @@ Source::Shared Measurement::clone() const
     cloned->setName(name());
     cloned->setActive(active());
 
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 long Measurement::estimated() const noexcept
 {
@@ -799,8 +801,8 @@ void Measurement::applyCalibration()
     if (!m_calibrationLoaded || !m_calibrationList.size())
         return;
 
-    m_calibrationGain.resize(static_cast<int>(m_dataLength));
-    m_calibrationPhase.resize(static_cast<int>(m_dataLength));
+    m_calibrationGain.resize(static_cast<int>(frequencyDomainSize()));
+    m_calibrationPhase.resize(static_cast<int>(frequencyDomainSize()));
 
     QVector<float> last = m_calibrationList[0];
     last[0] = 0.f;
@@ -811,7 +813,7 @@ void Measurement::applyCalibration()
     g1, g2, f1, f2, p1, p2,
     g, p;
     bool inList = false;
-    for (int i = 0; i < static_cast<int>(m_dataLength); ++i) {
+    for (int i = 0; i < static_cast<int>(frequencyDomainSize()); ++i) {
 
         while (m_ftdata[i].frequency > m_calibrationList[j][0]) {
             last = m_calibrationList[j];
@@ -858,10 +860,10 @@ void Measurement::updateAudio()
     }
     m_audioStream = nullptr;
     checkChannels();
-    if (m_active) {
+    if (active()) {
         std::async([this]() {
             audio::Format format = audio::Client::getInstance()->deviceInputFormat(m_deviceId);
-            m_sampleRate = format.sampleRate;
+            setSampleRate(format.sampleRate);
             m_input.setCallback([this](const char *buffer, qint64 size) {
                 writeData(buffer, size);
             });
@@ -889,7 +891,7 @@ void Measurement::checkChannels()
 void Measurement::destroy()
 {
     setActive(false);
-    Source::Abstract::destroy();
+    Abstract::Source::destroy();
 }
 void Measurement::resetAverage() noexcept
 {
@@ -923,7 +925,7 @@ Measurement::Meters::Meters() : m_reference(Weighting::Z, Meter::Slow)
 {
     for (auto &curve : Weighting::allCurves) {
         for (auto &time : Meter::allTimes) {
-            Levels::Key key     {curve, time};
+            ::Abstract::LevelsData::Key key     {curve, time};
             Meter       meter   {curve, time};
             m_meters[key] = meter;
         }

@@ -16,18 +16,18 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "source_shared.h"
-#include "source/source_abstract.h"
+#include "abstract/source.h"
 
-namespace Source {
+namespace Shared {
 
-Shared::Shared(std::shared_ptr<Source::Abstract> ptr)
-    : std::shared_ptr<Source::Abstract>(ptr)
+Source::Source(std::shared_ptr<Abstract::Source> ptr)
+    : std::shared_ptr<Abstract::Source>(ptr)
 {
 }
 
-Shared::~Shared() = default;
+Source::~Source() = default;
 
-QUuid Shared::uuid() const
+QUuid Source::uuid() const
 {
     if (get()) {
         return get()->uuid();
@@ -35,7 +35,7 @@ QUuid Shared::uuid() const
     return {};
 }
 
-QColor Shared::color() const
+QColor Source::color() const
 {
     if (get()) {
         return get()->color();
@@ -43,7 +43,7 @@ QColor Shared::color() const
     return {};
 }
 
-QString Shared::objectName() const
+QString Source::objectName() const
 {
     if (get()) {
         return get()->objectName();

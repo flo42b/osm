@@ -20,10 +20,10 @@
 
 #include <QtQml>
 #include "meta/metafilter.h"
-#include "source/source_abstract.h"
+#include "abstract/source.h"
 #include "math/fouriertransform.h"
 
-class FilterSource : public Source::Abstract, public Meta::Filter
+class FilterSource : public Abstract::Source, public Meta::Filter
 {
     Q_OBJECT
     QML_ELEMENT
@@ -33,7 +33,6 @@ class FilterSource : public Source::Abstract, public Meta::Filter
     Q_PROPERTY(bool autoName READ autoName WRITE setAutoName NOTIFY autoNameChanged)
 
     Q_PROPERTY(Meta::Measurement::Mode mode READ mode WRITE setMode NOTIFY modeChanged)
-    Q_PROPERTY(unsigned int sampleRate READ sampleRate WRITE setSampleRate NOTIFY sampleRateChanged)
 
     Q_PROPERTY(QVariant orders READ getAvailableOrders NOTIFY typeChanged)
     Q_PROPERTY(Meta::Filter::Type type READ type WRITE setType NOTIFY typeChanged)
@@ -46,17 +45,16 @@ class FilterSource : public Source::Abstract, public Meta::Filter
 public:
     FilterSource(QObject *parent = nullptr);
 
-    Source::Shared clone() const override;
-    Q_INVOKABLE QJsonObject toJSON(const SourceList *list = nullptr) const noexcept override;
-    void fromJSON(QJsonObject data, const SourceList *list = nullptr) noexcept override;
+    Shared::Source clone() const override;
+    Q_INVOKABLE QJsonObject toJSON() const noexcept override;
+    void fromJSON(QJsonObject data, const SourceList * = nullptr) noexcept override;
 
-    Q_INVOKABLE Source::Shared store()  override;
+    Q_INVOKABLE Shared::Source store()  override;
 
     bool autoName() const;
     void setAutoName(bool newAutoName);
 
 signals:
-    void sampleRateChanged(unsigned int) override;
     void typeChanged(Meta::Filter::Type) override;
     void modeChanged(Meta::Measurement::Mode) override;
     void cornerFrequencyChanged(float) override;
@@ -70,15 +68,15 @@ private slots:
     void applyAutoName();
 
 private:
-    complex calculate(float frequency) const;
-    complex Bessel(bool hpf, complex s) const;
-    complex calculateAPF(complex s) const;
-    complex calculatePeak(complex s) const;
+    Complex calculate(float frequency) const;
+    Complex Bessel(bool hpf, Complex s) const;
+    Complex calculateAPF(Complex s) const;
+    Complex calculatePeak(Complex s) const;
 
-    complex Butterworth(bool hpf, unsigned int order, const complex &s) const;
-    complex ButterworthPolinom(unsigned int k, unsigned int order, const complex &s) const;
+    Complex Butterworth(bool hpf, unsigned int order, const Complex &s) const;
+    Complex ButterworthPolinom(unsigned int k, unsigned int order, const Complex &s) const;
 
-    complex LinkwitzRiley(bool hpf, const complex &s) const;
+    Complex LinkwitzRiley(bool hpf, const Complex &s) const;
 
     bool m_autoName;
     FourierTransform m_dataFT, m_inverse;

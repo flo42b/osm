@@ -18,7 +18,7 @@
 #include "filtersource.h"
 #include "stored.h"
 
-FilterSource::FilterSource(QObject *parent) : Source::Abstract(parent), Meta::Filter(), m_autoName(true)
+FilterSource::FilterSource(QObject *parent) : Abstract::Source(parent), Meta::Filter(), m_autoName(true)
 {
     setObjectName("Filter");
     setName("Filter");
@@ -39,7 +39,7 @@ FilterSource::FilterSource(QObject *parent) : Source::Abstract(parent), Meta::Fi
     applyAutoName();
 }
 
-Source::Shared FilterSource::clone() const
+Shared::Source FilterSource::clone() const
 {
     auto cloned = std::make_shared<FilterSource>();
     cloned->setActive(active());
@@ -50,12 +50,12 @@ Source::Shared FilterSource::clone() const
     cloned->setOrder(order());
     cloned->setSampleRate(sampleRate());
 
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 
-QJsonObject FilterSource::toJSON(const SourceList *list) const noexcept
+QJsonObject FilterSource::toJSON() const noexcept
 {
-    auto object = Source::Abstract::toJSON(list);
+    auto object = Abstract::Source::toJSON();
 
     object["mode"]          = mode();
     object["type"]          = type();
@@ -63,14 +63,13 @@ QJsonObject FilterSource::toJSON(const SourceList *list) const noexcept
     object["gain"]          = gain();
     object["q"]             = q();
     object["order"]         = static_cast<int>(order());
-    object["sampleRate"]    = static_cast<int>(sampleRate());
 
     return object;
 }
 
-void FilterSource::fromJSON(QJsonObject data, const SourceList *list) noexcept
+void FilterSource::fromJSON(QJsonObject data, const SourceList *) noexcept
 {
-    Source::Abstract::fromJSON(data, list);
+    Abstract::Source::fromJSON(data);
 
     auto variantMode = data["mode"].toVariant();
     if (variantMode.isValid()) {
@@ -82,18 +81,16 @@ void FilterSource::fromJSON(QJsonObject data, const SourceList *list) noexcept
         setType(variantType.value<Type>());
     }
 
-
-    setSampleRate(      data["sampleRate"].toInt(       sampleRate()));
     setOrder(           data["order"].toInt(            order()));
     setCornerFrequency( data["cornerFrequency"].toDouble(cornerFrequency()));
     setGain( data["gain"].toDouble(cornerFrequency()));
     setQ(    data["q"].toDouble(cornerFrequency()));
 }
 
-Source::Shared FilterSource::store()
+Shared::Source FilterSource::store()
 {
     auto store = std::make_shared<Stored>();
-    store->build(this);
+    store->build( *this );
     store->autoName(name());
     return { store };
 }
@@ -111,29 +108,29 @@ void FilterSource::update()
             switch (mode()) {
             case M::Mode::LFT:
                 m_dataFT.setType(FourierTransform::Log);
-                m_deconvolutionSize = pow(2, M::m_FFTsizes.at(M::FFT12));
+                setTimeDomainSize(pow(2, M::m_FFTsizes.at(M::FFT12)));
                 break;
 
             default:
                 m_dataFT.setType(FourierTransform::Fast);
                 m_dataFT.setSize(pow(2, M::m_FFTsizes.at(mode())));
-                m_deconvolutionSize = pow(2, M::m_FFTsizes.at(mode()));
+                setTimeDomainSize(pow(2, M::m_FFTsizes.at(mode())));
             }
         } catch (std::exception &e) {
             qDebug() << __FILE__ << ":" << __LINE__  << e.what();
-            m_deconvolutionSize = 0;
-            m_dataLength = 0;
+            setTimeDomainSize(0);
+            setFrequencyDomainSize(0);
             return;
         }
 
         m_inverse.setType(FourierTransform::Fast);
-        m_inverse.setSize(m_deconvolutionSize);
+        m_inverse.setSize(timeDomainSize());
         m_inverse.prepare();
         m_dataFT.prepare();
 
         auto frequencyList = m_dataFT.getFrequencies();
-        m_dataLength = frequencyList.size();
-        m_ftdata.resize(m_dataLength);
+        setFrequencyDomainSize(frequencyList.size());
+
         unsigned int i = 0;
         for (auto frequency : frequencyList) {
             auto H = calculate(frequency);
@@ -146,8 +143,6 @@ void FilterSource::update()
             ++i;
         }
 
-        m_impulseData.resize(m_deconvolutionSize);
-
         frequencyList = m_inverse.getFrequencies();
         for (unsigned int i = 0; i < frequencyList.size(); ++i) {
             auto v = calculate(frequencyList[i]);
@@ -155,18 +150,18 @@ void FilterSource::update()
                 v = 0;
             }
             m_inverse.set(i, v.conjugate(), 0.f);
-            m_inverse.set(m_deconvolutionSize - i - 1, v, 0.f);
+            m_inverse.set(timeDomainSize() - i - 1, v, 0.f);
         }
 
         m_inverse.transformSingleChannel();
 
         int t = 0;
         float kt = 1000.f / sampleRate();
-        auto norm = 1.f / m_deconvolutionSize;
-        for (unsigned int i = 0, j = m_deconvolutionSize / 2 - 1; i < m_deconvolutionSize; i++, j++, t++) {
-            if (t > static_cast<int>(m_deconvolutionSize / 2)) {
-                t -= static_cast<int>(m_deconvolutionSize);
-                j -= m_deconvolutionSize;
+        auto norm = 1.f / timeDomainSize();
+        for (unsigned int i = 0, j = timeDomainSize() / 2 - 1; i < timeDomainSize(); i++, j++, t++) {
+            if (t > static_cast<int>(timeDomainSize() / 2)) {
+                t -= static_cast<int>(timeDomainSize());
+                j -= timeDomainSize();
             }
 
             m_impulseData[j].value = m_inverse.af(i).real * norm;
@@ -188,10 +183,10 @@ void FilterSource::applyAutoName()
     }
 }
 
-complex FilterSource::calculate(float frequency) const
+Complex FilterSource::calculate(float frequency) const
 {
     auto w = frequency / cornerFrequency();
-    auto s = complex::i * w;
+    auto s = Complex::i * w;
 
     switch (type()) {
     case ButterworthHPF:
@@ -213,7 +208,7 @@ complex FilterSource::calculate(float frequency) const
     }
 }
 
-complex FilterSource::Bessel(bool hpf, complex s) const
+Complex FilterSource::Bessel(bool hpf, Complex s) const
 {
     auto n  = order();
 
@@ -229,9 +224,9 @@ complex FilterSource::Bessel(bool hpf, complex s) const
         return factorial(2 * n - k) / (std::pow(2.0, n - k) * factorial(k) * factorial(n - k));
     };
 
-    complex s_k = 1;
-    complex numerator = a(0);
-    complex denominator = 0;
+    Complex s_k = 1;
+    Complex numerator = a(0);
+    Complex denominator = 0;
     float orderK = 1;
 
     switch (order()) {
@@ -253,7 +248,7 @@ complex FilterSource::Bessel(bool hpf, complex s) const
     }
 
     if (hpf) {
-        s = complex{1, 0} / s;
+        s = Complex{1, 0} / s;
     }
     s *= orderK;
 
@@ -267,11 +262,11 @@ complex FilterSource::Bessel(bool hpf, complex s) const
     return numerator / denominator;
 }
 
-complex FilterSource::calculateAPF(complex s) const
+Complex FilterSource::calculateAPF(Complex s) const
 {
     float q;
-    complex numerator;
-    complex denominator;
+    Complex numerator;
+    Complex denominator;
 
     switch (order()) {
     case 2:
@@ -289,11 +284,11 @@ complex FilterSource::calculateAPF(complex s) const
     return numerator / denominator;
 }
 
-complex FilterSource::calculatePeak(complex s) const
+Complex FilterSource::calculatePeak(Complex s) const
 {
     float a;
-    complex numerator;
-    complex denominator;
+    Complex numerator;
+    Complex denominator;
 
     a = std::pow(10, gain() / 40);
     numerator   = s * s + (s * a) / q() + 1;
@@ -302,9 +297,9 @@ complex FilterSource::calculatePeak(complex s) const
     return numerator / denominator;
 }
 
-complex FilterSource::Butterworth(bool hpf, unsigned int order, const complex &s) const
+Complex FilterSource::Butterworth(bool hpf, unsigned int order, const Complex &s) const
 {
-    complex numerator = 1;
+    Complex numerator = 1;
     if (hpf) {
         for (unsigned int i = 0; i < order; ++i) {
             numerator *= s;
@@ -312,7 +307,7 @@ complex FilterSource::Butterworth(bool hpf, unsigned int order, const complex &s
     }
 
     bool odd = order % 2;
-    complex denominator = (odd ? (s + 1) : 1);
+    Complex denominator = (odd ? (s + 1) : 1);
     unsigned int lastK = (order - (odd % 2 ? 1 : 0)) / 2;
     for (unsigned int k = 1; k <= lastK; ++k) {
         denominator *= ButterworthPolinom(k, order, s);
@@ -321,13 +316,13 @@ complex FilterSource::Butterworth(bool hpf, unsigned int order, const complex &s
     return numerator / denominator;
 }
 
-complex FilterSource::ButterworthPolinom(unsigned int k, unsigned int order, const complex &s) const
+Complex FilterSource::ButterworthPolinom(unsigned int k, unsigned int order, const Complex &s) const
 {
     float b =  -2 * cos((2 * k + order - 1) * M_PI / (2 * order));
     return s * s + s * b + 1;
 }
 
-complex FilterSource::LinkwitzRiley(bool hpf, const complex &s) const
+Complex FilterSource::LinkwitzRiley(bool hpf, const Complex &s) const
 {
     auto b = Butterworth(hpf, order() / 2, s);
     return b * b;

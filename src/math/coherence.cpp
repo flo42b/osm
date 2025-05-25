@@ -44,20 +44,20 @@ void Coherence::setSize(const size_t &size) noexcept
 void Coherence::setDepth(const size_t &depth) noexcept
 {
     m_depth = depth;
-    m_Gmm.each([&depth](container::array<float> *a) {
+    m_Gmm.each([&depth](Container::array<float> *a) {
         a->resize(depth);
         a->fill(0.f);
     });
-    m_Grr.each([&depth](container::array<float> *a) {
+    m_Grr.each([&depth](Container::array<float> *a) {
         a->resize(depth);
         a->fill(0.f);
     });
-    m_Grm.each([&depth](container::array<complex> *a) {
+    m_Grm.each([&depth](Container::array<Complex> *a) {
         a->resize(depth);
         a->fill(0);
     });
 }
-void Coherence::append(unsigned int i, const complex &refernce, const complex &measurement) noexcept
+void Coherence::append(unsigned int i, const Complex &refernce, const Complex &measurement) noexcept
 {
     if (i == 0) {
         ++m_subpointer;
@@ -72,7 +72,7 @@ void Coherence::append(unsigned int i, const complex &refernce, const complex &m
 float Coherence::value(unsigned int i) const noexcept
 {
     float Crr(0), Cmm(0);
-    complex Crm(0);
+    Complex Crm(0);
 
     for (unsigned int j = 0; j < m_depth; ++j) {
         Crm += m_Grm[i][j];
@@ -82,7 +82,7 @@ float Coherence::value(unsigned int i) const noexcept
     return Crm.abs() / std::sqrt(Crr * Cmm);
 }
 
-GNU_ALIGN void Coherence::calculate(Source::Abstract::FTData *dst, FourierTransform *src)
+GNU_ALIGN void Coherence::calculate(Abstract::Source::FTData *dst, FourierTransform *src)
 {
     ++m_subpointer;
     if (m_subpointer >= m_depth)

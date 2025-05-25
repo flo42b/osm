@@ -25,7 +25,7 @@ const std::map<StandardLine::Mode, QString>StandardLine::m_modeMap = {
     {StandardLine::WEIGHTING_C, "Weighting C"},
 };
 
-StandardLine::StandardLine(QObject *parent) : Source::Abstract(parent), m_mode(ELC), m_loudness(80.f)
+StandardLine::StandardLine(QObject *parent) : Abstract::Source(parent), m_mode(ELC), m_loudness(80.f)
 {
     setObjectName("StandardLine");
     setActive(true);
@@ -33,30 +33,30 @@ StandardLine::StandardLine(QObject *parent) : Source::Abstract(parent), m_mode(E
     update();
 }
 
-Source::Shared StandardLine::clone() const
+Shared::Source StandardLine::clone() const
 {
     auto cloned = std::make_shared<StandardLine>();
     cloned->setMode(mode());
     cloned->setLoudness(loudness());
     cloned->setName(name());
     cloned->setActive(active());
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 
-QJsonObject StandardLine::toJSON(const SourceList *list) const noexcept
+QJsonObject StandardLine::toJSON() const noexcept
 {
-    auto object = Source::Abstract::toJSON(list);
+    auto object = Abstract::Source::toJSON();
     object["mode"]      = mode();
     object["loudness"]  = loudness();
 
     return object;
 }
 
-void StandardLine::fromJSON(QJsonObject data, const SourceList *list) noexcept
+void StandardLine::fromJSON(QJsonObject data, const SourceList *) noexcept
 {
     setMode(data["mode"].toInt(mode()));
     setLoudness(data["loudness"].toDouble());
-    Source::Abstract::fromJSON(data, list);
+    Abstract::Source::fromJSON(data);
 }
 
 float StandardLine::loudness() const noexcept
@@ -95,11 +95,9 @@ void StandardLine::update()
 
 void StandardLine::createELC()
 {
-
-    m_deconvolutionSize = 0;
     auto size = Math::EqualLoudnessContour::size();
-    m_dataLength = size;
-    m_ftdata.resize(size);
+    setFrequencyDomainSize(size);
+    setTimeDomainSize(0);
     for (size_t i = 0; i < size; ++i) {
         m_ftdata[i].frequency   = Math::EqualLoudnessContour::frequency(i);
         m_ftdata[i].phase       = -INFINITY;
@@ -115,8 +113,8 @@ void StandardLine::createELC()
 
 void StandardLine::createWeighting()
 {
-    m_dataLength = 34;
-    m_deconvolutionSize = 0;
+    setFrequencyDomainSize(34);
+    setTimeDomainSize(0);
 
     static const auto f1 = 20.598997;
     static const auto f2 = 107.65265;
@@ -124,10 +122,8 @@ void StandardLine::createWeighting()
     static const auto f4 = 12194.217;
     static const auto f5 = 158.489032;
 
-    m_ftdata.resize(m_dataLength);
-
     //i = 10...43
-    for (size_t i = 0; i < m_dataLength; ++i) {
+    for (size_t i = 0; i < frequencyDomainSize(); ++i) {
         auto f = std::pow(10, 0.1 * (i + 10));
 
         m_ftdata[i].frequency   = f;

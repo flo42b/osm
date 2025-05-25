@@ -21,7 +21,7 @@
 
 namespace remote {
 
-Item::Item(QObject *parent) : Source::Abstract(parent), m_originalActive(false), m_eventSilence(true),
+Item::Item(QObject *parent) : Abstract::Source(parent), m_originalActive(false), m_eventSilence(true),
     m_serverId(nullptr), m_sourceId(nullptr), m_state(WAIT), m_stateTimer()
 {
     setObjectName("RemoteItem");
@@ -31,7 +31,7 @@ Item::Item(QObject *parent) : Source::Abstract(parent), m_originalActive(false),
     m_stateTimer.setInterval(1000);
     connect(&m_stateTimer, &QTimer::timeout, this, &Item::resetState);
     connect(this, &Item::stateChanged, this, &Item::startResetTimer);
-    connect(this, &Source::Abstract::activeChanged, this, &Item::refresh);
+    connect(this, &Abstract::Source::activeChanged, this, &Item::refresh);
 }
 
 void Item::connectProperties()
@@ -47,7 +47,7 @@ void Item::connectProperties()
     }
 }
 
-Source::Shared Item::clone() const
+Shared::Source Item::clone() const
 {
     return { nullptr };
 }
@@ -57,7 +57,7 @@ bool Item::cloneable() const
     return false;
 }
 
-QJsonObject Item::toJSON(const SourceList *) const noexcept
+QJsonObject Item::toJSON() const noexcept
 {
     QJsonObject object;
     object["serverId"]  = serverId().toString();
@@ -160,9 +160,8 @@ void Item::applyData(const QJsonArray &data, const QJsonArray &timeData)
     {
         std::lock_guard guard(m_dataMutex);
 
-        if (m_dataLength != static_cast<unsigned int>(data.count())) {
-            m_dataLength = static_cast<unsigned int>(data.count());
-            m_ftdata.resize(m_dataLength);
+        if (frequencyDomainSize() != static_cast<unsigned int>(data.count())) {
+            setFrequencyDomainSize(static_cast<unsigned int>(data.count()));
         }
 
         for (int i = 0; i < data.count(); i++) {
@@ -176,9 +175,8 @@ void Item::applyData(const QJsonArray &data, const QJsonArray &timeData)
             if (row.count() > 6) m_ftdata[i].meanSquared  = static_cast<float>(row[6].toDouble());
         }
 
-        if (m_deconvolutionSize != static_cast<unsigned int>(timeData.count())) {
-            m_deconvolutionSize = static_cast<unsigned int>(timeData.count());
-            m_impulseData.resize(m_deconvolutionSize);
+        if (timeDomainSize() != static_cast<unsigned int>(timeData.count())) {
+            setTimeDomainSize(static_cast<unsigned int>(timeData.count()));
         }
 
         for (int i = 0; i < timeData.count(); i++) {

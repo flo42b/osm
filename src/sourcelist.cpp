@@ -93,7 +93,7 @@ QUuid SourceList::firstSource() const noexcept
     return first ? first->uuid() : QUuid();
 }
 
-const QVector<Source::Shared> &SourceList::items() const
+const QVector<Shared::Source> &SourceList::items() const
 {
     return m_items;
 }
@@ -122,10 +122,10 @@ QUrl SourceList::currentFile() const noexcept
 {
     return m_currentFile;
 }
-const Source::Shared &SourceList::get_ref(int i) const noexcept
+const Shared::Source &SourceList::get_ref(int i) const noexcept
 {
     if (i < 0 || i >= m_items.size()) {
-        static Source::Shared s;
+        static Shared::Source s;
         return s;
     }
 
@@ -137,7 +137,7 @@ unsigned int SourceList::size() const
     return m_items.size();
 }
 
-Source::Shared SourceList::get(int i) const noexcept
+Shared::Source SourceList::get(int i) const noexcept
 {
     return get_ref(i);
 }
@@ -146,7 +146,7 @@ std::lock_guard<std::mutex> SourceList::lock() const
 {
     return std::lock_guard<std::mutex> {m_mutex};
 }
-Source::Shared SourceList::getByUUid(QUuid id) const noexcept
+Shared::Source SourceList::getByUUid(QUuid id) const noexcept
 {
     for (auto &item : m_items) {
         if (item && item->uuid() == id) {
@@ -223,7 +223,7 @@ bool SourceList::move(int from, int to) noexcept
 
     emit preItemMoved(from, to);
     if (m_items.size() > from) {
-        Source::Shared item = m_items.takeAt(from);
+        Shared::Source item = m_items.takeAt(from);
         m_items.insert((to > from ? to - 1 : to), item);
     } else {
         qWarning() << "move element from out the bounds";
@@ -235,8 +235,8 @@ bool SourceList::move(int from, int to) noexcept
 
 void SourceList::moveToGroup(QUuid targetId, QUuid groupId) noexcept
 {
-    Source::Shared sharedTarget = getByUUid(targetId);
-    Source::Shared sharedGroup  = getByUUid(groupId);
+    Shared::Source sharedTarget = getByUUid(targetId);
+    Shared::Source sharedGroup  = getByUUid(groupId);
 
     if (sharedTarget && sharedTarget != sharedGroup) {
         if (auto targetGroup = std::dynamic_pointer_cast<Source::Group>(sharedTarget)) {
@@ -252,7 +252,7 @@ void SourceList::moveToGroup(QUuid targetId, QUuid groupId) noexcept
     }
 }
 
-int SourceList::indexOf(const Source::Shared &item) const noexcept
+int SourceList::indexOf(const Shared::Source &item) const noexcept
 {
     return m_items.indexOf(item);
 }
@@ -270,7 +270,7 @@ int SourceList::indexOf(const QUuid &id) const noexcept
     return -1;
 }
 
-QJsonArray SourceList::toJSON(const SourceList *list) const noexcept
+QJsonArray SourceList::toJSON() const noexcept
 {
     QJsonArray data;
     for (int i = 0; i < m_items.size(); ++i) {
@@ -280,7 +280,7 @@ QJsonArray SourceList::toJSON(const SourceList *list) const noexcept
         }
         QJsonObject itemJson;
         itemJson["type"] = item->objectName();
-        itemJson["data"] = item->toJSON(list);
+        itemJson["data"] = item->toJSON();
         data.append(itemJson);
     }
     return data;
@@ -351,7 +351,7 @@ bool SourceList::save(const QUrl &fileName) const noexcept
     QJsonObject object;
     object["type"] = "sourcelsist";
 
-    auto data = toJSON(this);
+    auto data = toJSON();
     object["list"] = data;
     object["selected"] = m_selected;
 
@@ -442,9 +442,9 @@ bool SourceList::importFile(const QUrl &fileName, QString separator)
     char line[1024];
     bool fOk, mOk;
     float frequency, magnitude = 0.f, coherence = 1.f, maxMagnitude = -100;
-    complex phase;
+    Complex phase;
 
-    std::vector<Source::Abstract::FTData> d;
+    std::vector<Abstract::Source::FTData> d;
     d.reserve(480); //48 ppo
     auto s = std::make_shared<Stored>();
 
@@ -487,11 +487,11 @@ bool SourceList::importFile(const QUrl &fileName, QString separator)
         row.module    = std::pow(10.f, (row.module    + (absolute_scale ? 0 : 70) - 140) / 20.f);
         row.magnitude = std::pow(10.f, (row.magnitude - (absolute_scale ? maxMagnitude : 0)      ) / 20.f);
     }
-    s->copyFrom(d.size(), 0, d.data(), nullptr);
+    s->setFrequencyDomainData(std::move(d));
     s->setName(fileName.fileName());
     s->setNotes(notes);
     s->setActive(true);
-    Source::Shared shared{ s };
+    Shared::Source shared{ s };
     appendItem(shared, true);
     return true;
 }
@@ -522,7 +522,7 @@ bool SourceList::importImpulse(const QUrl &fileName, QString separator)
     char line[1024];
     float time, value;
 
-    std::vector<Source::Abstract::TimeData> d;
+    std::vector<Abstract::Source::TimeData> d;
     d.reserve(6720); //140ms @ 48kHz
     auto s = std::make_shared<Stored>();
 
@@ -542,11 +542,11 @@ bool SourceList::importImpulse(const QUrl &fileName, QString separator)
         }
     }
 
-    s->copyFrom(0, d.size(), nullptr, d.data());
+    s->setTimeDomainData(std::move(d));
     s->setName(fileName.fileName());
     s->setNotes(notes);
     s->setActive(true);
-    appendItem(Source::Shared{ s }, true);
+    appendItem(Shared::Source{ s }, true);
     return true;
 }
 bool SourceList::importWav(const QUrl &fileName)
@@ -562,7 +562,7 @@ bool SourceList::importWav(const QUrl &fileName)
     float time = 0, value = 0, dt = 1000.f / wav.sampleRate(), maxValue = 0, offset = 0;
     bool finished = false;
 
-    std::vector<Source::Abstract::TimeData> d;
+    std::vector<Abstract::Source::TimeData> d;
     d.reserve(6720); //140ms @ 48kHz
     auto s = std::make_shared<Stored>();
 
@@ -582,15 +582,16 @@ bool SourceList::importWav(const QUrl &fileName)
     }
 
     for (auto &row : d) {
-        row.time -= offset;
+        row.time = row.time - offset;
     }
 
-    s->copyFrom(0, d.size(), nullptr, d.data());
+    s->setSampleRate(wav.sampleRate());
+    s->setTimeDomainData(std::move(d));
     //s->restoreFromImpulse();
     s->setName(fileName.fileName());
     s->setNotes(notes);
     s->setActive(true);
-    Source::Shared shared{ s };
+    Shared::Source shared{ s };
     appendItem(shared, true);
     return true;
 }
@@ -599,7 +600,7 @@ int SourceList::selectedIndex() const
     return m_selected;
 }
 
-Source::Shared SourceList::selected() const noexcept
+Shared::Source SourceList::selected() const noexcept
 {
     return m_items.value(m_selected);
 }
@@ -694,38 +695,38 @@ template<typename T> bool SourceList::loadObject(const QJsonObject &data, const 
 
     auto s = std::make_shared<T>();
     s->fromJSON(data, topList);
-    Source::Shared shared{ s };
+    Shared::Source shared{ s };
     appendItem(shared, false);
     nextColor();
     return true;
 }
 
-template<typename T, typename... Ts> Source::Shared SourceList::add(Ts... args)
+template<typename T, typename... Ts> Shared::Source SourceList::add(Ts... args)
 {
-    Source::Shared t{ std::make_shared<T>(&args...) };
+    Shared::Source t{ std::make_shared<T>(&args...) };
     appendItem(t, true);
     return t;
 }
-Source::Shared SourceList::addUnion()
+Shared::Source SourceList::addUnion()
 {
     return add<Union>();
 }
-Source::Shared SourceList::addStandardLine()
+Shared::Source SourceList::addStandardLine()
 {
     return add<StandardLine>();
 }
 
-Source::Shared SourceList::addFilter()
+Shared::Source SourceList::addFilter()
 {
     return add<FilterSource>();
 }
 
-Source::Shared SourceList::addWindowing()
+Shared::Source SourceList::addWindowing()
 {
     return add<Windowing>();
 }
 
-Source::Shared SourceList::addGroup()
+Shared::Source SourceList::addGroup()
 {
     auto shared_group =  add<Source::Group>();
     if (auto group = std::dynamic_pointer_cast<Source::Group>(shared_group)) {
@@ -738,22 +739,22 @@ Source::Shared SourceList::addGroup()
     return shared_group;
 }
 
-Source::Shared SourceList::addMeasurement()
+Shared::Source SourceList::addMeasurement()
 {
     return add<Measurement>();
 }
 int SourceList::appendNone()
 {
-    m_items.prepend(Source::Shared{nullptr});
+    m_items.prepend(Shared::Source{nullptr});
     return 0;
 }
 int SourceList::appendAll()
 {
-    m_items.prepend(Source::Shared{nullptr});
+    m_items.prepend(Shared::Source{nullptr});
     return 0;
 }
 
-void SourceList::appendItem(const Source::Shared &item, bool autocolor)
+void SourceList::appendItem(const Shared::Source &item, bool autocolor)
 {
     auto guard = lock();
     emit preItemAppended();
@@ -766,12 +767,12 @@ void SourceList::appendItem(const Source::Shared &item, bool autocolor)
     emit countChanged();
 }
 
-void SourceList::takeItem(Source::Shared item)
+void SourceList::takeItem(Shared::Source item)
 {
     appendItem(item, false);
 }
 
-void SourceList::removeItem(const Source::Shared &item, bool deleteItem)
+void SourceList::removeItem(const Shared::Source &item, bool deleteItem)
 {
     auto guard = lock();
     if (!item) {
@@ -782,7 +783,7 @@ void SourceList::removeItem(const Source::Shared &item, bool deleteItem)
         if (m_items.at(i) == item) {
             auto item = get_ref(i);
             emit preItemRemoved(item.uuid());
-            m_items.replace(i, Source::Shared{});
+            m_items.replace(i, Shared::Source{});
             m_items.removeAt(i);
             if (deleteItem) {
                 item->destroy();
@@ -799,7 +800,7 @@ void SourceList::removeItem(const QUuid &uuid, bool deleteItem)
         removeItem(s, deleteItem);
     }
 }
-void SourceList::cloneItem(const Source::Shared &item)
+void SourceList::cloneItem(const Shared::Source &item)
 {
     if (item) {
         auto newItem = item->clone();
@@ -809,17 +810,17 @@ void SourceList::cloneItem(const Source::Shared &item)
     }
 }
 
-void SourceList::storeItem(const Source::Shared &item)
+void SourceList::storeItem(const Shared::Source &item)
 {
     if (!item) {
         return;
     }
-    Source::Shared newItem;
+    Shared::Source newItem;
     QMetaObject::invokeMethod(
         item.get(),
         "store",
         Qt::DirectConnection,
-        Q_RETURN_ARG(Source::Shared, newItem));
+        Q_RETURN_ARG(Shared::Source, newItem));
 
     if (newItem) {
         newItem->setActive(true);

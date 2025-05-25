@@ -24,15 +24,15 @@
 
 std::mutex Union::s_calcmutex = std::mutex();
 
-Union::Union(QObject *parent): Source::Abstract(parent),
+Union::Union(QObject *parent): Abstract::Source(parent),
     m_sources(2),
     m_timer(nullptr), m_timerThread(nullptr),
     m_operation(Summation),
     m_type(Vector),
     m_autoName(true)
 {
-    m_name = "Union";
-    setObjectName(m_name);
+    setName("Union");
+    setObjectName(name());
 
     m_timer.setInterval(80);//12.5 per sec
     m_timer.setSingleShot(true);
@@ -52,7 +52,7 @@ Union::~Union()
     m_timerThread.wait();
 }
 
-Source::Shared Union::clone() const
+Shared::Source Union::clone() const
 {
     auto cloned = std::make_shared<Union>();
 
@@ -64,7 +64,7 @@ Source::Shared Union::clone() const
     for (int i = 0; i < count(); ++i) {
         cloned->setSource(i, getSource(i));
     }
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 
 int Union::count() const noexcept
@@ -90,15 +90,15 @@ void Union::setOperation(Operation operation) noexcept
     }
 }
 
-void Union::setActive(bool active) noexcept
+void Union::setActive(bool newActive) noexcept
 {
-    if (active == m_active)
+    if (newActive == active())
         return;
 
-    if (active && checkLoop(this)) {
+    if (newActive && checkLoop(this)) {
         return;
     }
-    Source::Abstract::setActive(active);
+    Abstract::Source::setActive(newActive);
     update();
 }
 Union::Type Union::type() const
@@ -122,12 +122,10 @@ void Union::init() noexcept
 void Union::resize()
 {
     auto primary = m_sources.first();
-    m_dataLength         = static_cast<unsigned int>(primary ? primary->size() : 1);
-    m_deconvolutionSize = static_cast<unsigned int>(primary ? primary->impulseSize() : 1);
-    m_ftdata.resize(m_dataLength);
-    m_impulseData.resize(m_deconvolutionSize);
+    setFrequencyDomainSize(static_cast<unsigned int>(primary ? primary->frequencyDomainSize() : 1));
+    setTimeDomainSize(     static_cast<unsigned int>(primary ? primary->timeDomainSize()      : 1));
 }
-Source::Shared Union::getSource(int index) const noexcept
+Shared::Source Union::getSource(int index) const noexcept
 {
     if (index < m_sources.count()) {
         return m_sources.at(index);
@@ -143,7 +141,7 @@ QUuid Union::getSourceId(int index) const noexcept
     }
     return {};
 }
-bool Union::setSource(int index, const Source::Shared &s) noexcept
+bool Union::setSource(int index, const Shared::Source &s) noexcept
 {
     if (s == getSource(index))
         return true;
@@ -158,15 +156,15 @@ bool Union::setSource(int index, const Source::Shared &s) noexcept
 
     if (index < m_sources.count()) {
         if (m_sources[index]) {
-            disconnect(m_sources[index].get(), &Source::Abstract::readyRead, this, &Union::update);
+            disconnect(m_sources[index].get(), &Abstract::Source::readyRead, this, &Union::update);
         }
         m_sources.replace(index, s);
         if (index == 0)
             init();
 
         if (s) {
-            connect(s.get(), &Source::Abstract::readyRead, this, &Union::update);
-            connect(s.get(), &Source::Abstract::beforeDestroy, this, &Union::sourceDestroyed, Qt::DirectConnection);
+            connect(s.get(), &::Abstract::Source::readyRead, this, &Union::update);
+            connect(s.get(), &::Abstract::Source::beforeDestroy, this, &Union::sourceDestroyed, Qt::DirectConnection);
         }
         update();
         emit modelChanged();
@@ -183,7 +181,7 @@ void Union::update() noexcept
 
 void Union::calc() noexcept
 {
-    std::set<Source::Shared> sources;
+    std::set<Shared::Source> sources;
 
     if (!active())
         return;
@@ -199,14 +197,14 @@ void Union::calc() noexcept
             return;
         }
 
-        if (primary->size() != size()) {
+        if (primary->frequencyDomainSize() != frequencyDomainSize()) {
             resize();
         }
 
         for (auto &s : m_sources) {
             if (s) {
                 sources.insert(s);
-                if (s->size() != primary->size()) {
+                if (s->frequencyDomainSize() != primary->frequencyDomainSize()) {
                     if (0/*can resize*/) {
                         //resize
                     } else {
@@ -254,12 +252,12 @@ void Union::calc() noexcept
     }
     emit readyRead();
 }
-void Union::calcPolar(unsigned int count, const Source::Shared &primary) noexcept
+void Union::calcPolar(unsigned int count, const Shared::Source &primary) noexcept
 {
     float magnitude, module, coherence, coherenceWeight;
-    complex phase;
+    Complex phase;
 
-    for (unsigned int i = 0; i < primary->size(); i++) {
+    for (unsigned int i = 0; i < primary->frequencyDomainSize(); i++) {
         magnitude = primary->magnitudeRaw(i);
         phase = primary->phase(i);
         module = primary->module(i);
@@ -326,17 +324,17 @@ void Union::calcPolar(unsigned int count, const Source::Shared &primary) noexcep
         m_ftdata[i].coherence  = coherence;
     }
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         m_impulseData[i].time = primary->impulseTime(i);
         m_impulseData[i].value = NAN;
     }
 }
-void Union::calcVector(unsigned int count, const Source::Shared &primary) noexcept
+void Union::calcVector(unsigned int count, const Shared::Source &primary) noexcept
 {
     float coherence, coherenceWeight;
-    complex a, m, p;
+    Complex a, m, p;
 
-    for (unsigned int i = 0; i < primary->size(); i++) {
+    for (unsigned int i = 0; i < primary->frequencyDomainSize(); i++) {
         a = primary->phase(i) * primary->module(i);
         p = primary->phase(i) * primary->peakSquared(i);
         m = primary->phase(i) * primary->magnitudeRaw(i);
@@ -393,17 +391,17 @@ void Union::calcVector(unsigned int count, const Source::Shared &primary) noexce
         m_ftdata[i].peakSquared = p.abs();
     }
 
-    if (primary->impulseSize() < 2) {
+    if (primary->timeDomainSize() < 2) {
         return;
     }
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         m_impulseData[i].time = primary->impulseTime(i);
         m_impulseData[i].value = primary->impulseValue(i);
     }
     float dt = m_impulseData[1].time - m_impulseData[0].time;
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         for (auto it = m_sources.begin(); it != m_sources.end(); ++it) {
             if (!(*it)) {
                 continue;
@@ -411,7 +409,7 @@ void Union::calcVector(unsigned int count, const Source::Shared &primary) noexce
             float st = (*it)->impulseTime(i);
             long offseted =  (long)i + (st - m_impulseData[i].time) / dt;
 
-            if (*it && it != m_sources.begin() && offseted > 0 && offseted < impulseSize()) {
+            if (*it && it != m_sources.begin() && offseted > 0 && offseted < timeDomainSize()) {
                 switch (m_operation) {
                 case Summation:
                 case Avg:
@@ -422,10 +420,10 @@ void Union::calcVector(unsigned int count, const Source::Shared &primary) noexce
                     m_impulseData[offseted].value -= (*it)->impulseValue(i);
                     break;
                 case Min:
-                    m_impulseData[offseted].value = std::min(m_impulseData[offseted].value, complex{(*it)->impulseValue(i)});
+                    m_impulseData[offseted].value = std::min(m_impulseData[offseted].value, Complex{(*it)->impulseValue(i)});
                     break;
                 case Max:
-                    m_impulseData[offseted].value = std::max(m_impulseData[offseted].value, complex{(*it)->impulseValue(i)});
+                    m_impulseData[offseted].value = std::max(m_impulseData[offseted].value, Complex{(*it)->impulseValue(i)});
                     break;
                 case Apply:
                     //calculated in calcApply
@@ -438,18 +436,18 @@ void Union::calcVector(unsigned int count, const Source::Shared &primary) noexce
     }
 
     if (m_operation == Avg) {
-        for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+        for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
             m_impulseData[i].value /= count;
         }
     }
 }
 
-void Union::calcdB(unsigned int count, const Source::Shared &primary) noexcept
+void Union::calcdB(unsigned int count, const Shared::Source &primary) noexcept
 {
     float magnitude, module, coherence, coherenceWeight;
-    complex phase;
+    Complex phase;
 
-    for (unsigned int i = 0; i < primary->size(); i++) {
+    for (unsigned int i = 0; i < primary->frequencyDomainSize(); i++) {
         magnitude = primary->magnitude(i);
         phase = primary->phase(i);
         module = 20.f * std::log10((primary)->module(i));
@@ -519,18 +517,18 @@ void Union::calcdB(unsigned int count, const Source::Shared &primary) noexcept
         m_ftdata[i].coherence  = coherence;
     }
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         m_impulseData[i].time = primary->impulseTime(i);
         m_impulseData[i].value = NAN;
     }
 }
 
-void Union::calcPower(unsigned int count, const Source::Shared &primary) noexcept
+void Union::calcPower(unsigned int count, const Shared::Source &primary) noexcept
 {
     float magnitude, module, coherence, coherenceWeight;
-    complex phase;
+    Complex phase;
 
-    for (unsigned int i = 0; i < primary->size(); i++) {
+    for (unsigned int i = 0; i < primary->frequencyDomainSize(); i++) {
         magnitude = std::pow(primary->magnitudeRaw(i), 2);
         phase = primary->phase(i);
         module = std::pow((primary)->module(i), 2);
@@ -602,18 +600,18 @@ void Union::calcPower(unsigned int count, const Source::Shared &primary) noexcep
         m_ftdata[i].coherence  = coherence;
     }
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         m_impulseData[i].time = primary->impulseTime(i);
         m_impulseData[i].value = NAN;
     }
 }
 
-void Union::calcApply(const Source::Shared &primary) noexcept
+void Union::calcApply(const Shared::Source &primary) noexcept
 {
     float magnitude, module, coherence;
-    complex phase;
+    Complex phase;
 
-    for (unsigned int i = 0; i < primary->size(); i++) {
+    for (unsigned int i = 0; i < primary->frequencyDomainSize(); i++) {
         magnitude   = primary->magnitudeRaw(i);
         phase       = primary->phase(i);
         module      = (primary)->module(i);
@@ -639,7 +637,7 @@ void Union::calcApply(const Source::Shared &primary) noexcept
         m_ftdata[i].coherence  = coherence;
     }
 
-    for (unsigned int i = 0; i < primary->impulseSize(); i++) {
+    for (unsigned int i = 0; i < primary->timeDomainSize(); i++) {
         m_impulseData[i].time = primary->impulseTime(i);
         m_impulseData[i].value = NAN;
     }
@@ -694,7 +692,7 @@ void Union::applyAutoName() noexcept
     }
 }
 
-void Union::sourceDestroyed(Source::Abstract *source)
+void Union::sourceDestroyed(::Abstract::Source *source)
 {
     std::lock_guard l(s_calcmutex);
 
@@ -703,13 +701,13 @@ void Union::sourceDestroyed(Source::Abstract *source)
     });
     if (position != m_sources.end()) {
         auto index = std::distance(m_sources.begin(), position);
-        setSource(index, Source::Shared{nullptr});
+        setSource(index, Shared::Source{nullptr});
     }
 }
 
-QJsonObject Union::toJSON(const SourceList *list) const noexcept
+QJsonObject Union::toJSON() const noexcept
 {
-    auto object = Source::Abstract::toJSON(list);
+    auto object = Abstract::Source::toJSON();
 
     object["count"]     = count();
     object["type"]      = type();
@@ -717,12 +715,10 @@ QJsonObject Union::toJSON(const SourceList *list) const noexcept
     object["autoName"]  = autoName();
 
     QJsonArray sources;
-    if (list) {
-        for (int i = 0; i < count(); ++i) {
-            auto source = getSource(i);
-            if (source) {
-                sources.append(source.uuid().toString());
-            }
+    for (int i = 0; i < count(); ++i) {
+        auto source = getSource(i);
+        if (source) {
+            sources.append(source.uuid().toString());
         }
     }
     object["sources"] = sources;
@@ -775,10 +771,10 @@ Union::Operation Union::operation() const noexcept
 {
     return m_operation;
 }
-Source::Shared Union::store()
+Shared::Source Union::store()
 {
     auto store = std::make_shared<Stored>();
-    store->build(this);
+    store->build( *this );
     store->autoName(name());
 
     try {

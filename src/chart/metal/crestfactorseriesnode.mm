@@ -52,14 +52,14 @@ void CrestFactorSeriesNode::updateMatrix()
     m_matrix.translate(-1 * logf(m_xMin), 0);
 }
 
-const Source::Shared &CrestFactorSeriesNode::source() const
+const Shared::Source &CrestFactorSeriesNode::source() const
 {
     return m_source;
 }
 
 void CrestFactorSeriesNode::renderSeries()
 {
-    if (!m_source->size()) {
+    if (!m_source->frequencyDomainSize()) {
         clearRender();
         return;
     }

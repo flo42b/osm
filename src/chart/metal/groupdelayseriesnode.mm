@@ -51,7 +51,7 @@ void GroupDelaySeriesNode::synchronizeSeries()
 
 void GroupDelaySeriesNode::renderSeries()
 {
-    if (!m_source->size()) {
+    if (!m_source->frequencyDomainSize()) {
         clearRender();
         return;
     }
@@ -128,7 +128,7 @@ void GroupDelaySeriesNode::updateMatrix()
     m_matrix.translate(-1 * logf(m_xMin), 0);
 }
 
-const Source::Shared &GroupDelaySeriesNode::source() const
+const Shared::Source &GroupDelaySeriesNode::source() const
 {
     return m_source;
 }

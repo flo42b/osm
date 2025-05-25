@@ -21,11 +21,11 @@
 #include "sourcelist.h"
 #include "stored.h"
 
-Windowing::Windowing(QObject *parent) : Source::Abstract(parent), Meta::Windowing(),
+Windowing::Windowing(QObject *parent) : Abstract::Source(parent), Meta::Windowing(),
     m_sampleRate(1), m_source(nullptr),
     m_window(WindowFunction::Type::Rectangular, this)
 {
-    m_name = "Windowing";
+    setName("Windowing");
     setObjectName("Windowing");
     connect(this, &Windowing::windowFunctionTypeChanged, this, &Windowing::applyAutoName);
     connect(this, &Windowing::sourceChanged, this, &Windowing::applyAutoName);
@@ -50,7 +50,7 @@ Windowing::~Windowing()
 {
 }
 
-Source::Shared Windowing::clone() const
+Shared::Source Windowing::clone() const
 {
     auto cloned = std::make_shared<Windowing>();
     cloned->setMode(mode());
@@ -62,12 +62,12 @@ Source::Shared Windowing::clone() const
     cloned->setMaxFrequency(maxFrequency());
     cloned->setSource(source());
 
-    return std::static_pointer_cast<Source::Abstract>(cloned);
+    return std::static_pointer_cast<Abstract::Source>(cloned);
 }
 
-QJsonObject Windowing::toJSON(const SourceList *list) const noexcept
+QJsonObject Windowing::toJSON() const noexcept
 {
-    auto object = Source::Abstract::toJSON(list);
+    auto object = Abstract::Source::toJSON();
 
     object["mode"]                  = mode();
     object["domain"]                = domain();
@@ -85,7 +85,7 @@ QJsonObject Windowing::toJSON(const SourceList *list) const noexcept
 
 void Windowing::fromJSON(QJsonObject data, const SourceList *list) noexcept
 {
-    Source::Abstract::fromJSON(data, list);
+    Abstract::Source::fromJSON(data, list);
 
     setMode(static_cast<Meta::Windowing::Mode>(data["mode"].toInt(mode())));
     setDomain(static_cast<Meta::Windowing::SourceDomain>(data["domain"].toInt(domain())));
@@ -161,7 +161,7 @@ void Windowing::applyAutoWide()
 void Windowing::resizeData()
 {
     Q_ASSERT(m_source);
-    if (m_usedMode != mode() || m_deconvolutionSize == 0 || m_resize) {
+    if (m_usedMode != mode() || timeDomainSize() == 0 || m_resize) {
         m_usedMode = mode();
         auto size = pow(2, m_FFTsizes.at(m_usedMode));
 
@@ -170,12 +170,11 @@ void Windowing::resizeData()
         if (!m_sampleRate) {
             m_sampleRate = 48'000; //TODO: get from source, apply default in the source
         }
-        m_deconvolutionSize = size;
-        m_impulseData.resize(m_deconvolutionSize);
-        m_window.setSize(m_deconvolutionSize);
+        setTimeDomainSize(size);
+        m_window.setSize(timeDomainSize());
 
         // FFT:
-        m_dataFT.setSize(m_deconvolutionSize);
+        m_dataFT.setSize(timeDomainSize());
         m_dataFT.setType(m_usedMode >= Mode::LTW1 ? FourierTransform::Log : FourierTransform::Fast);
         m_dataFT.setNorm(m_usedMode >= Mode::LTW1 ? FourierTransform::Lin : FourierTransform::Sqrt);
         m_dataFT.setAlign(FourierTransform::Center);
@@ -194,25 +193,24 @@ void Windowing::resizeData()
         m_dataFT.prepare();
 
         auto frequencyList = m_dataFT.getFrequencies();
-        m_dataLength = frequencyList.size();
-        m_ftdata.resize(m_dataLength);
+        setFrequencyDomainSize(frequencyList.size());
 
         unsigned int i = 0;
         for (auto frequency : frequencyList) {
             m_ftdata[i].frequency = frequency;
             m_ftdata[i].coherence = 1;
             i++;
-            if (i >= m_dataLength) {
+            if (i >= frequencyDomainSize()) {
                 break;
             }
         }
         //fill frequency data
         int t = 0;
         float kt = 1000.f / sampleRate();
-        for (unsigned int i = 0, j = m_deconvolutionSize / 2 - 1; i < m_deconvolutionSize; i++, j++, t++) {
-            if (t > static_cast<int>(m_deconvolutionSize / 2)) {
-                t -= static_cast<int>(m_deconvolutionSize);
-                j -= m_deconvolutionSize;
+        for (unsigned int i = 0, j = timeDomainSize() / 2 - 1; i < timeDomainSize(); i++, j++, t++) {
+            if (t > static_cast<int>(timeDomainSize() / 2)) {
+                t -= static_cast<int>(timeDomainSize());
+                j -= timeDomainSize();
             }
 
             m_impulseData[j].time = t * kt;//ms
@@ -247,14 +245,15 @@ void Windowing::updateFromFrequencyDomain()
 
     unsigned last = 0, j = 0;
     float kg, bg, g, g1, g2, f1, f2, c, kc, bc, c1, c2;
-    complex p1, p2, kp, bp, p;
+    float m, m1, m2, km, bm;
+    Complex p1, p2, kp, bp, p;
     bool inList = false;
 
-    for (unsigned i = 0; i < size(); ++i) {
+    for (unsigned i = 0; i < frequencyDomainSize(); ++i) {
 
         while (frequency(i) > m_source->frequency(j)) {
             last = j;
-            if (j + 1 < m_source->size()) {
+            if (j + 1 < m_source->frequencyDomainSize()) {
                 ++j;
                 inList = true;
             } else {
@@ -264,6 +263,7 @@ void Windowing::updateFromFrequencyDomain()
         }
 
         f1 = m_source->frequency(last);
+        m1 = m_source->module(last);
         g1 = m_source->magnitudeRaw(last);
         p1 = m_source->phase(last);
         c1 = m_source->coherence(last);
@@ -274,6 +274,7 @@ void Windowing::updateFromFrequencyDomain()
         }
 
         f2 = m_source->frequency(j);
+        m2 = m_source->module(j);
         g2 = m_source->magnitudeRaw(j);
         p2 = m_source->phase(j);
         c2 = m_source->coherence(j);
@@ -283,6 +284,9 @@ void Windowing::updateFromFrequencyDomain()
         }
 
         if (inList) {
+            km = (m2 - m1) / (f2 - f1);
+            bm = m2 - f2 * km;
+
             kg = (g2 - g1) / (f2 - f1);
             bg = g2 - f2 * kg;
 
@@ -292,10 +296,12 @@ void Windowing::updateFromFrequencyDomain()
             kc = (c2 - c1) / (f2 - f1);
             bc = c2 - kc * f2;
 
+            m = km * frequency(i) + bm;
             g = kg * frequency(i) + bg;
             p = kp * frequency(i) + bp;
             c = kc * frequency(i) + bc;
         } else {
+            m = m2;
             g = g2;
             p = p2;
             c = c2;
@@ -303,16 +309,18 @@ void Windowing::updateFromFrequencyDomain()
 
         static float threshold = powf(10, -30 / 20);
         if (g < threshold || c < 0.7) {
+            m = 0;
             g = 0;
             p = 0;
             c = 0;
         }
         auto complexMagnitude = i == 0 ? 0 : p * g;
+        m_ftdata[i].module = m;
         m_ftdata[i].magnitude = g;
         m_ftdata[i].phase = p;
         m_ftdata[i].coherence = c;
         m_dataFT.set(                i,     complexMagnitude.conjugate(), 0);
-        m_dataFT.set(impulseSize() - i - 1, complexMagnitude,             0);
+        m_dataFT.set(timeDomainSize() - i - 1, complexMagnitude,             0);
     }
 
     // apply iFFT
@@ -321,31 +329,31 @@ void Windowing::updateFromFrequencyDomain()
     //fill time data
     int t = 0;
     float kt = 1000.f / sampleRate();
-    float norm = 1.f / m_deconvolutionSize;
-    for (unsigned int i = 0, j = m_deconvolutionSize / 2 - 1; i < m_deconvolutionSize; i++, j++, t++) {
+    float norm = 1.f / timeDomainSize();
+    for (unsigned int i = 0, j = timeDomainSize() / 2 - 1; i < timeDomainSize(); i++, j++, t++) {
 
-        if (t > static_cast<int>(m_deconvolutionSize / 2)) {
-            t -= static_cast<int>(m_deconvolutionSize);
-            j -= m_deconvolutionSize;
+        if (t > static_cast<int>(timeDomainSize() / 2)) {
+            t -= static_cast<int>(timeDomainSize());
+            j -= timeDomainSize();
         }
 
-        m_impulseData[j].value.real = norm * m_dataFT.af(i).real;
+        m_impulseData[j].value = norm * m_dataFT.af(i).real;
         m_impulseData[j].time = t * kt;//ms
     }
 }
 
-void Windowing::updateFromTimeDomain(const Source::Shared &source)
+void Windowing::updateFromTimeDomain(const Shared::Source &source)
 {
     Q_ASSERT(source);
 
-    float dt = 1000.f / m_sampleRate, time = -dt * m_deconvolutionSize / 2;
+    float dt = 1000.f / m_sampleRate, time = -dt * timeDomainSize() / 2;
 
     //=m_source->impulseZeroOffset()
-    auto zeroOffset = source->impulseSize() / 2;
+    auto zeroOffset = source->timeDomainSize() / 2;
 
     int center  = zeroOffset + m_offset * m_sampleRate / 1000;
-    int from    = center - m_deconvolutionSize / 2;
-    int end     = center + m_deconvolutionSize / 2;
+    int from    = center - timeDomainSize() / 2;
+    int end     = center + timeDomainSize() / 2;
 
     //Tukey Window:
     auto alpha = 0.25f;
@@ -358,7 +366,7 @@ void Windowing::updateFromTimeDomain(const Source::Shared &source)
 
     auto windowKoefficient = m_window.gain() / m_window.norm();
     int j = 0;
-    for (int i = from/*, j = 0*/, f = m_deconvolutionSize / 2 + 1; i < end; ++i, ++j, time += dt, ++f) {
+    for (int i = from/*, j = 0*/, f = timeDomainSize() / 2 + 1; i < end; ++i, ++j, time += dt, ++f) {
 
         float value = (i >= 0 ? source->impulseValue(i) * m_window.get(j) * windowKoefficient : 0);
 
@@ -373,7 +381,7 @@ void Windowing::updateFromTimeDomain(const Source::Shared &source)
 
         m_impulseData[j].value = value;
         m_impulseData[j].time = m_source->impulseTime(i);
-        if (f == m_deconvolutionSize) {
+        if (f == timeDomainSize()) {
             f = 0;
         }
         if (m_usedMode >= Mode::LTW1) {
@@ -394,7 +402,7 @@ void Windowing::transform()
     }
 
     auto criticalFrequency = 1000 / wide();
-    for (unsigned i = 0; i < size(); ++i) {
+    for (unsigned i = 0; i < frequencyDomainSize(); ++i) {
         if (domain() == Windowing::SourceDomain::Time) {
             m_ftdata[i].coherence = 1;
         }
@@ -427,12 +435,12 @@ void Windowing::transform()
     }
 }
 
-Source::Shared Windowing::source() const
+Shared::Source Windowing::source() const
 {
     return m_source;
 }
 
-void Windowing::setSource(const Source::Shared &newSource)
+void Windowing::setSource(const Shared::Source &newSource)
 {
     if (m_source == newSource) {
         return;
@@ -453,12 +461,12 @@ void Windowing::setSource(const Source::Shared &newSource)
         m_resize = true;
 
         if (m_source) {
-            connect(m_source.get(), &Source::Abstract::beforeDestroy, this, [this]() {
-                setSource(Source::Shared{ nullptr });
+            connect(m_source.get(), &Abstract::Source::beforeDestroy, this, [this]() {
+                setSource(Shared::Source{ nullptr });
             }, Qt::DirectConnection);
 
             connect(
-                m_source.get(), &Source::Abstract::readyRead,
+                m_source.get(), &Abstract::Source::readyRead,
                 this, &Windowing::update,
 
                 //TODO: QueuedConnection when it will work on its own thread
@@ -481,10 +489,10 @@ QUuid Windowing::sourceId() const
     return QUuid{};
 }
 
-Source::Shared Windowing::store()
+Shared::Source Windowing::store()
 {
     auto stored = std::make_shared<Stored>();
-    stored->build(this);
+    stored->build( *this );
     stored->autoName(name());
 
     QString notes = "Windowing on " + (source() ? source()->name() : "") + "\n";
@@ -507,7 +515,7 @@ Source::Shared Windowing::store()
 
     stored->setNotes(notes);
 
-    return std::static_pointer_cast<Source::Abstract>(stored);
+    return std::static_pointer_cast<Abstract::Source>(stored);
 }
 
 unsigned Windowing::sampleRate() const

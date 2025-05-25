@@ -57,7 +57,7 @@ void NyquistSeriesRenderer::init()
 
 void NyquistSeriesRenderer::renderSeries()
 {
-    if (!m_source->active() || !m_source->size())
+    if (!m_source->active() || !m_source->frequencyDomainSize())
         return;
 
     //max octave count: 11
@@ -78,13 +78,13 @@ void NyquistSeriesRenderer::renderSeries()
     };
 
     auto beforeSpline = [] (const auto * value, auto, const auto & count) {
-        complex c = value->m_phase / count;
+        Complex c = value->m_phase / count;
         c /= c.abs();
         c *= value->m_magnitude / count;
         return c;
     };
 
-    auto collected = [ &, this] (const float & f1, const float & f2, const complex ac[4], const float c[4]) {
+    auto collected = [ &, this] (const float & f1, const float & f2, const Complex ac[4], const float c[4]) {
 
         if (m_openGL33CoreFunctions) {
             if (i + 12 > maxBufferSize) {
@@ -128,7 +128,7 @@ void NyquistSeriesRenderer::renderSeries()
         coherence = 0.f;
     };
 
-    iterateForSpline<NyquistPlot::SplineValue, complex>(m_pointsPerOctave, &value, &coherence, accumulate, collected,
+    iterateForSpline<NyquistPlot::SplineValue, Complex>(m_pointsPerOctave, &value, &coherence, accumulate, collected,
                                                         beforeSpline);
 
     m_program.setUniformValue(m_matrixUniform, m_matrix);
@@ -188,7 +188,7 @@ void NyquistSeriesRenderer::updateMatrix()
     m_matrix.ortho(m_xMin, m_xMax, m_yMax, m_yMin, -1, 1);
 }
 
-const Source::Shared &NyquistSeriesRenderer::source() const
+const Shared::Source &NyquistSeriesRenderer::source() const
 {
     return m_source;
 }
